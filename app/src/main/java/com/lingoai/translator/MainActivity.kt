@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
 import android.widget.*
 import android.text.InputType
 import org.json.JSONObject
@@ -72,7 +73,6 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
         }
 
-        // أزرار اختيار اللغات
         fromButton = Button(this).apply {
             setTextColor(Color.WHITE)
             textSize = 15f
@@ -127,7 +127,9 @@ class MainActivity : Activity() {
             setHintTextColor(Color.LTGRAY)
             setPadding(18, 20, 18, 20)
             minLines = 5
-            gravity = Gravity.TOP
+            gravity = Gravity.TOP or Gravity.START
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
             background = roundedBackground(
@@ -154,6 +156,9 @@ class MainActivity : Activity() {
                 Color.rgb(29, 39, 60)
             )
             minLines = 4
+            gravity = Gravity.TOP or Gravity.START
+            textDirection = View.TEXT_DIRECTION_FIRST_STRONG
+            textAlignment = View.TEXT_ALIGNMENT_VIEW_START
         }
 
         val scrollView = ScrollView(this)
@@ -295,6 +300,8 @@ class MainActivity : Activity() {
 
                 runOnUiThread {
                     outputText.text = translated
+                    outputText.textDirection =
+                        View.TEXT_DIRECTION_FIRST_STRONG
                     translateButton.isEnabled = true
                 }
 
