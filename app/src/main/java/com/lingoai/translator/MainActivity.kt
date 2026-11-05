@@ -10,6 +10,7 @@ import android.text.InputType
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
+import java.net.HttpURLConnection
 import kotlin.concurrent.thread
 
 class MainActivity : Activity() {
@@ -18,6 +19,7 @@ class MainActivity : Activity() {
     private lateinit var outputText: TextView
     private lateinit var fromLanguage: Spinner
     private lateinit var toLanguage: Spinner
+    private lateinit var translateButton: Button
 
     private val languages = arrayOf(
         "العربية" to "ar",
@@ -93,7 +95,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.rgb(29, 39, 60))
         }
 
-        val translateButton = Button(this).apply {
+        translateButton = Button(this).apply {
             text = "ترجم الآن"
             textSize = 18f
         }
@@ -169,9 +171,17 @@ class MainActivity : Activity() {
         val source = languages[fromLanguage.selectedItemPosition].second
         val target = languages[toLanguage.selectedItemPosition].second
 
+        if (source == target) {
+            outputText.text = text
+            return
+        }
+
+        translateButton.isEnabled = false
         outputText.text = "جاري الترجمة..."
 
         thread {
+            var connection: HttpURLConnection? = null
+
             try {
                 val encoded = URLEncoder.encode(text, "UTF-8")
 
@@ -179,31 +189,36 @@ class MainActivity : Activity() {
                     "https://api.mymemory.translated.net/get?q=$encoded&langpair=$source|$target"
                 )
 
-                val connection = url.openConnection()
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
                 connection.readTimeout = 15000
 
-                val response = connection.getInputStream()
+                val response = connection.inputStream
                     .bufferedReader()
                     .use { it.readText() }
 
                 val json = JSONObject(response)
+
                 val translated = json
                     .getJSONObject("responseData")
                     .getString("translatedText")
 
                 runOnUiThread {
                     outputText.text = translated
+                    translateButton.isEnabled = true
                 }
 
-                connection.getInputStream().close()
-                connection.disconnect()
-
             } catch (e: Exception) {
+
                 runOnUiThread {
                     outputText.text =
                         "تعذرت الترجمة. تحقق من الإنترنت وحاول مجدداً."
+                    translateButton.isEnabled = true
                 }
+
+            } finally {
+                connection?.disconnect()
             }
         }
     }
