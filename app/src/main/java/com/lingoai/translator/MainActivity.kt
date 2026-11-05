@@ -11,11 +11,13 @@ import android.view.Gravity
 import android.view.View
 import android.widget.*
 import android.text.InputType
-import org.json.JSONObject
-import java.net.URL
-import java.net.URLEncoder
-import java.net.HttpURLConnection
-import kotlin.concurrent.thread
+
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.TranslateRemoteModel
+import com.google.mlkit.nl.translate.TranslatorOptions
+import com.google.mlkit.nl.translate.Translation
 
 class MainActivity : Activity() {
 
@@ -27,6 +29,10 @@ class MainActivity : Activity() {
 
     private var sourceIndex = 0
     private var targetIndex = 1
+
+    private val modelManager by lazy {
+        RemoteModelManager.getInstance()
+    }
 
     private val languages = arrayOf(
         "العربية" to "ar",
@@ -77,18 +83,14 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
             textSize = 15f
             isAllCaps = false
-            background = roundedBackground(
-                Color.rgb(211, 47, 47)
-            )
+            background = roundedBackground(Color.rgb(211, 47, 47))
         }
 
         toButton = Button(this).apply {
             setTextColor(Color.WHITE)
             textSize = 15f
             isAllCaps = false
-            background = roundedBackground(
-                Color.rgb(22, 132, 71)
-            )
+            background = roundedBackground(Color.rgb(22, 132, 71))
         }
 
         updateLanguageButtons()
@@ -132,9 +134,7 @@ class MainActivity : Activity() {
             textAlignment = View.TEXT_ALIGNMENT_VIEW_START
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            background = roundedBackground(
-                Color.rgb(29, 39, 60)
-            )
+            background = roundedBackground(Color.rgb(29, 39, 60))
         }
 
         translateButton = Button(this).apply {
@@ -142,9 +142,15 @@ class MainActivity : Activity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             isAllCaps = false
-            background = roundedBackground(
-                Color.rgb(40, 100, 190)
-            )
+            background = roundedBackground(Color.rgb(40, 100, 190))
+        }
+
+        val manageButton = Button(this).apply {
+            text = "إدارة اللغات وتنزيلها"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            isAllCaps = false
+            background = roundedBackground(Color.rgb(75, 85, 110))
         }
 
         outputText = TextView(this).apply {
@@ -152,9 +158,7 @@ class MainActivity : Activity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setPadding(18, 25, 18, 25)
-            background = roundedBackground(
-                Color.rgb(29, 39, 60)
-            )
+            background = roundedBackground(Color.rgb(29, 39, 60))
             minLines = 4
             gravity = Gravity.TOP or Gravity.START
             textDirection = View.TEXT_DIRECTION_FIRST_STRONG
@@ -176,6 +180,9 @@ class MainActivity : Activity() {
         root.addView(space(15))
         root.addView(translateButton)
 
+        root.addView(space(10))
+        root.addView(manageButton)
+
         root.addView(space(20))
         root.addView(label("الترجمة"))
         root.addView(outputText)
@@ -186,17 +193,17 @@ class MainActivity : Activity() {
         translateButton.setOnClickListener {
             translateText()
         }
+
+        manageButton.setOnClickListener {
+            showLanguageManager()
+        }
     }
 
     private fun chooseLanguage(isSource: Boolean) {
 
         val names = languages.map { it.first }.toTypedArray()
 
-        val selected = if (isSource) {
-            sourceIndex
-        } else {
-            targetIndex
-        }
+        val selected = if (isSource) sourceIndex else targetIndex
 
         AlertDialog.Builder(this)
             .setTitle(
@@ -219,12 +226,8 @@ class MainActivity : Activity() {
     }
 
     private fun updateLanguageButtons() {
-
-        fromButton.text =
-            "🔴 من: ${languages[sourceIndex].first}"
-
-        toButton.text =
-            "🟢 إلى: ${languages[targetIndex].first}"
+        fromButton.text = "🔴 من: ${languages[sourceIndex].first}"
+        toButton.text = "🟢 إلى: ${languages[targetIndex].first}"
     }
 
     private fun roundedBackground(color: Int): GradientDrawable {
@@ -249,6 +252,165 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun mlLanguage(index: Int): String? {
+        return TranslateLanguage.fromLanguageTag(
+            languages[index].second
+        )
+    }
+
+    private fun getModel(language: String): TranslateRemoteModel {
+        return TranslateRemoteModel.Builder(language).build()
+    }
+
+    // إدارة حزم اللغات
+    private fun showLanguageManager() {
+
+        val names = languages.map { it.first }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("إدارة حزم اللغات")
+            .setItems(names) { _, which ->
+                manageOneLanguage(which)
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
+    }
+
+    private fun manageOneLanguage(index: Int) {
+
+        val language = mlLanguage(index)
+
+        if (language == null) {
+            Toast.makeText(
+                this,
+                "هذه اللغة غير مدعومة من محرك الترجمة",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        val model = getModel(language)
+
+        modelManager.isModelDownloaded(model)
+            .addOnSuccessListener { downloaded ->
+
+                if (downloaded) {
+                    AlertDialog.Builder(this)
+                        .setTitle(languages[index].first)
+                        .setMessage("الحزمة موجودة على جهازك.")
+                        .setPositiveButton("حذف الحزمة") { _, _ ->
+                            deleteLanguageModel(model, index)
+                        }
+                        .setNegativeButton("إغلاق", null)
+                        .show()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle(languages[index].first)
+                        .setMessage(
+                            "هذه اللغة غير منزّلة.\n" +
+                            "حجم النموذج يقارب 30 ميغابايت.\n" +
+                            "التنزيل يحتاج إنترنت."
+                        )
+                        .setPositiveButton("تنزيل") { _, _ ->
+                            downloadLanguageModel(model, index)
+                        }
+                        .setNegativeButton("إلغاء", null)
+                        .show()
+                }
+            }
+            .addOnFailureListener {
+                Toast.makeText(
+                    this,
+                    "تعذر فحص حالة الحزمة",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+    }
+
+    private fun downloadLanguageModel(
+        model: TranslateRemoteModel,
+        index: Int
+    ) {
+
+        val progress = ProgressBar(this)
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("تنزيل ${languages[index].first}")
+            .setMessage("جارٍ تنزيل حزمة اللغة...")
+            .setView(progress)
+            .setCancelable(false)
+            .create()
+
+        dialog.show()
+
+        val conditions = DownloadConditions.Builder()
+            .requireWifi()
+            .build()
+
+        modelManager.download(model, conditions)
+            .addOnSuccessListener {
+                dialog.dismiss()
+
+                AlertDialog.Builder(this)
+                    .setTitle("اكتمل التنزيل")
+                    .setMessage(
+                        "تم تنزيل حزمة ${languages[index].first} بنجاح."
+                    )
+                    .setPositiveButton("حسناً", null)
+                    .show()
+            }
+            .addOnFailureListener { error ->
+                dialog.dismiss()
+
+                AlertDialog.Builder(this)
+                    .setTitle("فشل التنزيل")
+                    .setMessage(
+                        "لم نتمكن من تنزيل الحزمة.\n" +
+                        "تحقق من اتصال الإنترنت والمساحة المتوفرة.\n\n" +
+                        "التفاصيل: ${error.localizedMessage ?: "خطأ غير معروف"}"
+                    )
+                    .setPositiveButton("حسناً", null)
+                    .show()
+            }
+    }
+
+    private fun deleteLanguageModel(
+        model: TranslateRemoteModel,
+        index: Int
+    ) {
+
+        modelManager.deleteDownloadedModel(model)
+            .addOnSuccessListener {
+                Toast.makeText(
+                    this,
+                    "تم حذف حزمة ${languages[index].first}",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            .addOnFailureListener {
+                Toast.makeText(
+                    this,
+                    "تعذر حذف الحزمة",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+    }
+
+    // فحص وجود نموذج اللغة
+    private fun checkModel(
+        language: String,
+        callback: (Boolean) -> Unit
+    ) {
+        modelManager.isModelDownloaded(getModel(language))
+            .addOnSuccessListener { downloaded ->
+                callback(downloaded)
+            }
+            .addOnFailureListener {
+                callback(false)
+            }
+    }
+
+    // الترجمة المحلية
     private fun translateText() {
 
         val text = inputText.text.toString().trim()
@@ -262,8 +424,13 @@ class MainActivity : Activity() {
             return
         }
 
-        val source = languages[sourceIndex].second
-        val target = languages[targetIndex].second
+        val source = mlLanguage(sourceIndex)
+        val target = mlLanguage(targetIndex)
+
+        if (source == null || target == null) {
+            outputText.text = "إحدى اللغتين غير مدعومة."
+            return
+        }
 
         if (source == target) {
             outputText.text = text
@@ -271,51 +438,63 @@ class MainActivity : Activity() {
         }
 
         translateButton.isEnabled = false
-        outputText.text = "جاري الترجمة..."
+        outputText.text = "جارٍ فحص حزم اللغات..."
 
-        thread {
-            var connection: HttpURLConnection? = null
+        checkModel(source) { sourceReady ->
 
-            try {
-                val encoded = URLEncoder.encode(text, "UTF-8")
+            if (!sourceReady) {
+                translateButton.isEnabled = true
+                outputText.text =
+                    "حمّل حزمة لغة ${languages[sourceIndex].first} أولاً من إدارة اللغات."
+                return@checkModel
+            }
 
-                val url = URL(
-                    "https://api.mymemory.translated.net/get?q=$encoded&langpair=$source|$target"
-                )
+            checkModel(target) { targetReady ->
 
-                connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-
-                val response = connection.inputStream
-                    .bufferedReader()
-                    .use { it.readText() }
-
-                val json = JSONObject(response)
-
-                val translated = json
-                    .getJSONObject("responseData")
-                    .getString("translatedText")
-
-                runOnUiThread {
-                    outputText.text = translated
-                    outputText.textDirection =
-                        View.TEXT_DIRECTION_FIRST_STRONG
+                if (!targetReady) {
                     translateButton.isEnabled = true
-                }
-
-            } catch (e: Exception) {
-
-                runOnUiThread {
                     outputText.text =
-                        "تعذرت الترجمة. تحقق من الإنترنت وحاول مجدداً."
-                    translateButton.isEnabled = true
+                        "حمّل حزمة لغة ${languages[targetIndex].first} أولاً من إدارة اللغات."
+                    return@checkModel
                 }
 
-            } finally {
-                connection?.disconnect()
+                runLocalTranslation(text, source, target)
             }
         }
+    }
+
+    private fun runLocalTranslation(
+        text: String,
+        source: String,
+        target: String
+    ) {
+
+        outputText.text = "جارٍ الترجمة محلياً..."
+
+        val options = TranslatorOptions.Builder()
+            .setSourceLanguage(source)
+            .setTargetLanguage(target)
+            .build()
+
+        val translator = Translation.getClient(options)
+
+        translator.translate(text)
+            .addOnSuccessListener { translated ->
+
+                outputText.text = translated
+                outputText.textDirection =
+                    View.TEXT_DIRECTION_FIRST_STRONG
+
+                translateButton.isEnabled = true
+                translator.close()
+            }
+            .addOnFailureListener { error ->
+
+                outputText.text =
+                    "تعذرت الترجمة. تأكد من تنزيل حزم اللغتين."
+
+                translateButton.isEnabled = true
+                translator.close()
+            }
     }
 }
